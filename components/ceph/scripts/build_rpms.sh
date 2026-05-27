@@ -34,6 +34,10 @@ build_ceph_rpms() {
     mkdir -p "${topdir}/${i}" || true
   done
 
+  echo "Include building boost with valgrind support"
+  CEPH_EXTRA_CMAKE_ARGS="${CEPH_EXTRA_CMAKE_ARGS} -DWITH_SYSTEM_BOOST=OFF -DWITH_BOOST_VALGRIND=ON"
+  echo "cmake extra args: ${CEPH_EXTRA_CMAKE_ARGS}"
+
   echo "Build Ceph SRPMs and RPMs"
 
   pushd "${ceph_dir}" >/dev/null || exit 1
