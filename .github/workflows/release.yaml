@@ -1,0 +1,39 @@
+name: Release CBS components
+
+on:
+  push:
+    tags:
+      - "v*"
+
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag to build (e.g., v1.0.0)"
+        required: true
+        type: string
+
+jobs:
+  build-release-bundle:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
+          fetch-tags: true
+
+      - name: Build Components Tarball
+        run: |
+          ./scripts/gen-package.sh -o cbs-components.tar
+
+      - name: Create Release
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name}}
+          files: |
+            cbs-components.tar
+          generate_release_notes: true
