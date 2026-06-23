@@ -48,9 +48,6 @@ pre:
       source: https://shaman.ceph.com/api/repos/ceph-iscsi/main/latest/rocky/10/repo
       dest: /etc/yum.repos.d/ceph-iscsi.repo
 
-    - name: python-scikit-learn
-      source: copr://tchaikov/python-scikit-learn
-
   scripts:
     - name: disable rpm docs install
       run: setup-no-docs.sh
