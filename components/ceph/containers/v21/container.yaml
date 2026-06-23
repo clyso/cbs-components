@@ -41,7 +41,7 @@ pre:
       dest: /etc/yum.repos.d/ganesha.repo
 
     - name: tcmu-runner
-      source: https://shaman.ceph.com/api/repos/tcmu-runner/main/latest/centos/10/repo?arch=x86_64
+      source: https://shaman.ceph.com/api/repos/tcmu-runner/main/latest/rocky/10/repo?arch=x86_64
       dest: /etc/yum.repos.d/tcmu-runner.repo
 
     - name: ceph-iscsi
@@ -90,7 +90,7 @@ packages:
     - section: recommends
       packages:
         - nvme-cli
-        - python3-saml
+        - python3-ceph-smb-ctl
         - smartmontools
 
     - section: nfs-ganesha
