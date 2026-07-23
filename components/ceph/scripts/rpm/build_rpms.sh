@@ -14,10 +14,10 @@
 # GNU General Public License for more details.
 
 build_ceph_rpms() {
-  local ceph_dir="${1}"
-  local dist_version=".el${2}.clyso"
-  local topdir="${3:-${HOME}/rpmbuild}"
-  local version="${4}"
+  local ceph_dir="${CBS_WORKTREE:?}"
+  local dist_version=".el${CBS_TARGET_OS_VERSION:?}.clyso"
+  local topdir="${CBS_TOPDIR:-${HOME}/rpmbuild}"
+  local version="${CBS_VERSION:?}"
 
   if [[ -n ${CES_CCACHE_PATH} ]]; then
     echo "CES build rpms with CCACHE: ${CES_CCACHE_PATH}"
@@ -70,21 +70,21 @@ build_ceph_rpms() {
 # of the same name from 'ceph/ceph-build', in 'ceph-rpm-release/build/build'.
 # It has been significantly modified for CES purposes instead of upstream's.
 build_ceph_release_rpm() {
-  local el_version="${2}"
-  local topdir="${3}"
-  local version="${4}"
+  local el_version="${CBS_TARGET_OS_VERSION:?}"
+  local topdir="${CBS_TOPDIR:?}"
+  local version="${CBS_VERSION:?}"
 
   echo "Build Ceph RPM release package"
 
   summary="CES Ceph repository configuration"
   project_url=https://www.clyso.com/
   epoch=1 # means a non-development release (0 would be development)
-  base_url="https://s3.clyso.com/ces-packages"
-  target="el${el_version}.clyso"
-  repo_base_url="${base_url}/components/ceph/rpm-${version}/${target}"
-  # repo_base_url="http://download.ceph.com/rpm-${ceph_release}/${target}"
+  # Artifact locations are injected by the backend (CBS_* env contract) —
+  # never hardcoded here: pointing a deployment at a different bucket is a
+  # config change (storage.s3.public-url, signing.key-url).
+  repo_base_url="${CBS_COMPONENT_REPO_URL:?}"
   gpgcheck=1
-  gpgkey=https://s3.clyso.com/ces-packages/release.asc
+  gpgkey="${CBS_RELEASE_KEY_URL:?}"
   dist_version=".el${el_version}.clyso"
 
   cat <<EOF >"${topdir}"/SPECS/ceph-release.spec
@@ -177,5 +177,5 @@ EOF
     "${topdir}"/SPECS/ceph-release.spec
 }
 
-build_ceph_rpms "$@" || exit 1
-build_ceph_release_rpm "$@" || exit 1
+build_ceph_rpms || exit 1
+build_ceph_release_rpm || exit 1

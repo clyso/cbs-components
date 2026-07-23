@@ -14,11 +14,11 @@
 # GNU General Public License for more details.
 
 ceph_install_deps() {
-  local ceph_dir="${1}"
+  local ceph_dir="${CBS_WORKTREE:?}"
 
   pushd "${ceph_dir}" || exit 1
   ./install-deps.sh || exit 1
   popd || exit 1
 }
 
-ceph_install_deps "$@"
+ceph_install_deps
