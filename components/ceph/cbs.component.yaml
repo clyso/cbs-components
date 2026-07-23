@@ -1,13 +1,23 @@
+schema-version: 2
 name: ceph
-repo: https://github.com/clyso/ceph
+# Upstream is the default source repository; override it per descriptor
+# component entry or with -o ceph=<uri> when building from a fork.
+repo: gh://ceph/ceph
+
+# The version→OS matrix: which target OSes may build a given ceph version,
+# and which one is picked by default. Every currently-curated recipe is
+# el9-only — el10 rows arrive together with el10 recipe content.
+targets:
+  - supported: [el9]
+    default: el9
 
 build:
-  rpm:
-    build: scripts/build_rpms.sh
-    release-rpm: scripts/get_release_rpm.sh
-
   get-version: scripts/get_version.sh
-  deps: scripts/install_deps.sh
+  backends:
+    rpm:
+      deps: scripts/rpm/install_deps.sh
+      build: scripts/rpm/build_rpms.sh
+      release-package: scripts/rpm/get_release_rpm.sh
 
-containers:
-  path: containers/
+images:
+  path: images/
