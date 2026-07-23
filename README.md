@@ -5,6 +5,11 @@ This repository contains the components that are consumed by [CBS](https://githu
 The various components can be found under the `components/` directory
 at the repository's root.
 
+How components are organized and written — the manifest, the image
+recipes, conditional (`when:`) content, and the version→OS targets
+matrix — is documented in
+[docs/component-format.md](./docs/component-format.md).
+
 Components are packaged as tar files using `scripts/gen-package.sh`.
 
 ## Installing Components
