@@ -27,14 +27,14 @@ pre:
     - dnf-plugins-core
 
   repos:
-    # el9-scoped repos (the stream-9 ganesha repo, the centos/9 shaman repo,
-    # the el9 iscsi path): el10 builds get their own entries once el10
-    # content exists — never a silent reuse of these.
+    # Per-OS repo entries are explicit — a new OS must be listed here
+    # deliberately, never inherited silently. The el10 entries mirror the
+    # v21 recipe and are pending an e2e build validation of 19.2.5+ on el10.
     - name: ganesha
       source: file://ganesha.repo
       dest: /etc/yum.repos.d/ganesha.repo
       when:
-        os: el9
+        os: [el9, el10]
 
     - name: tcmu-runner
       source: https://shaman.ceph.com/api/repos/tcmu-runner/main/latest/centos/{{ os_version }}/repo?arch={{ arch }}
@@ -42,17 +42,29 @@ pre:
       when:
         os: el9
 
+    - name: tcmu-runner
+      source: https://shaman.ceph.com/api/repos/tcmu-runner/main/latest/rocky/{{ os_version }}/repo?arch={{ arch }}
+      dest: /etc/yum.repos.d/tcmu-runner.repo
+      when:
+        os: el10
+
     - name: ceph-iscsi
       source: https://download.ceph.com/ceph-iscsi/3/rpm/el9/ceph-iscsi.repo
       dest: /etc/yum.repos.d/ceph-iscsi.repo
       when:
         os: el9
 
-    # copr is rpm-only -- validated, not assumed.
+    - name: ceph-iscsi
+      source: https://shaman.ceph.com/api/repos/ceph-iscsi/main/latest/rocky/{{ os_version }}/repo
+      dest: /etc/yum.repos.d/ceph-iscsi.repo
+      when:
+        os: el10
+
+    # copr is el9-only: el10 ships python3-scikit-learn in the distro repos.
     - name: python-scikit-learn
       source: copr://tchaikov/python-scikit-learn
       when:
-        family: el
+        os: el9
 
 packages:
   required:
@@ -96,7 +108,7 @@ packages:
 
     - section: nfs-ganesha
       when:
-        os: el9
+        os: [el9, el10]
       packages:
         - dbus-daemon
         - nfs-ganesha-ceph
@@ -152,10 +164,14 @@ post:
   - name: ganesha-fixes
     run: fix-ganesha.sh
     when:
-      os: el9
+      os: [el9, el10]
 
+  # fix-jaraco patches a python3.9 site-packages path for an el9-only
+  # packaging bug (rhbz#2324959); it does not apply to el10 (python3.12).
   - name: fix-jaraco
     run: fix-jaraco.sh
+    when:
+      os: el9
 
   - name: disable-sync-udev
     run: disable-sync-udev.sh

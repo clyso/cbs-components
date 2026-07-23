@@ -5,11 +5,18 @@ name: ceph
 repo: gh://ceph/ceph
 
 # The version→OS matrix: which target OSes may build a given ceph version,
-# and which one is picked by default. Every currently-curated recipe is
-# el9-only — el10 rows arrive together with el10 recipe content.
+# and which one is picked by default. Ranges are half-open [from, before).
+#
+# ceph up to 19.2.4 only builds on el9; from 19.2.5 onwards (including 20.2+
+# and the 21.x dev line) el10 is required. Move the boundary by editing the
+# ranges — a version in neither range fails loudly at descriptor-create time.
 targets:
-  - supported: [el9]
+  - versions: { before: "19.2.5" }
+    supported: [el9]
     default: el9
+  - versions: { from: "19.2.5" }
+    supported: [el10]
+    default: el10
 
 build:
   get-version: scripts/get_version.sh
