@@ -1,45 +1,58 @@
 config:
   env:
     CEPH_IS_DEVEL: "False"
-    CEPH_REF: "{git_ref}"
-    CEPH_VERSION: "{git_ref}"
+    CEPH_REF: "{{ git_ref }}"
+    CEPH_VERSION: "{{ git_ref }}"
     CEPH_OSD_FLAVOR: default
-    FROM_IMAGE: "{distro}"
+    FROM_IMAGE: "{{ base_image }}"
   labels:
     ceph: "True"
-    CEPH_REF: "{git_ref}"
-    CEPH_SHA1: "{git_sha1}"
-    CEPH_GIT_REPO: "{git_repo_url}"
+    CEPH_REF: "{{ git_ref }}"
+    CEPH_SHA1: "{{ git_sha1 }}"
+    CEPH_GIT_REPO: "{{ git_repo_url }}"
     GANESHA_REPO_BASEURL: https://buildlogs.centos.org/centos/$releasever-stream/storage/$basearch/nfsganesha-5/
     OSD_FLAVOR: default
   annotations:
-    com.clyso.ces.ceph.version: "{git_ref}"
+    com.clyso.ces.ceph.version: "{{ git_ref }}"
 
 pre:
   keys:
-    - https://ces-packages.s3.clyso.com/keys/release.asc
+    # The location is config-injected (storage.s3.public-url) -- never
+    # hardcoded.
+    - "{{ artifacts_url }}/keys/release.asc"
 
   packages:
     - epel-release
     - jq
     - dnf-plugins-core
-    - https://ces-packages.s3.clyso.com/components/ceph/rpm-{version}/el{el}.clyso/noarch/ceph-release-2-1.el{el}.clyso.noarch.rpm
 
   repos:
+    # el9-scoped repos (the stream-9 ganesha repo, the centos/9 shaman repo,
+    # the el9 iscsi path): el10 builds get their own entries once el10
+    # content exists — never a silent reuse of these.
     - name: ganesha
       source: file://ganesha.repo
       dest: /etc/yum.repos.d/ganesha.repo
+      when:
+        os: el9
 
     - name: tcmu-runner
-      source: https://shaman.ceph.com/api/repos/tcmu-runner/main/latest/centos/9/repo?arch=x86_64
+      source: https://shaman.ceph.com/api/repos/tcmu-runner/main/latest/centos/{{ os_version }}/repo?arch={{ arch }}
       dest: /etc/yum.repos.d/tcmu-runner.repo
+      when:
+        os: el9
 
     - name: ceph-iscsi
       source: https://download.ceph.com/ceph-iscsi/3/rpm/el9/ceph-iscsi.repo
       dest: /etc/yum.repos.d/ceph-iscsi.repo
+      when:
+        os: el9
 
+    # copr is rpm-only -- validated, not assumed.
     - name: python-scikit-learn
       source: copr://tchaikov/python-scikit-learn
+      when:
+        family: el
 
 packages:
   required:
@@ -82,11 +95,10 @@ packages:
         - smartmontools
 
     - section: nfs-ganesha
+      when:
+        os: el9
       packages:
         - dbus-daemon
-        # there's a mismatch between rockylinux 9.7 (latest atm) and stream's
-        # ganesha repo, on the 'selinux-policy' package version. We need to
-        # rely on the old ganesha package until 9.8 is officially out.
         - nfs-ganesha-ceph
         - nfs-ganesha-rados-grace
         - nfs-ganesha-rados-urls
@@ -129,15 +141,18 @@ packages:
       packages:
         - ceph-node-proxy
 
-  optional:
     - section: crimson
-      cond: with_crimson
+      # gated behind the crimson feature (was v1's `cond: with_crimson`)
+      when:
+        feature: crimson
       packages:
         - ceph-crimson-osd
 
 post:
   - name: ganesha-fixes
     run: fix-ganesha.sh
+    when:
+      os: el9
 
   - name: fix-jaraco
     run: fix-jaraco.sh

@@ -1,0 +1,11 @@
+# Recipe selection index: version ranges map to recipe directories — no
+# proximity ranking, no symlink aliases. Ranges are half-open [from, before);
+# the unbounded last row picks up the current dev line. When a new major line
+# starts, add a row for it and close the previous one with a `before:`.
+schema-version: 1
+recipes:
+  - { versions: { from: "17.2", before: "18.0" }, recipe: v17 }
+  - { versions: { from: "18.0", before: "19.0" }, recipe: v18 }
+  - { versions: { from: "19.0", before: "20.0" }, recipe: v19 }
+  - { versions: { from: "20.0", before: "21.0" }, recipe: v20 }
+  - { versions: { from: "21.0" }, recipe: v21 }
