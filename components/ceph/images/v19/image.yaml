@@ -103,8 +103,15 @@ packages:
     - section: recommends
       packages:
         - nvme-cli
-        - python3-saml
         - smartmontools
+
+    # python3-saml exists only on el9 (upstream scopes it to el major <= 9);
+    # an unconditional entry fails dnf on el10.
+    - section: recommends-el9
+      when:
+        os: el9
+      packages:
+        - python3-saml
 
     - section: nfs-ganesha
       when:
