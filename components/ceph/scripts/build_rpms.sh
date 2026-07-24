@@ -59,6 +59,7 @@ build_ceph_rpms() {
     --without=crimson \
     --define "_topdir ${topdir}" \
     --define "dist ${dist_version}" \
+    --define "_lto_cflags %{nil}" \
     -rb "${topdir}"/SRPMS/*.src.rpm || exit 1
 
   popd >/dev/null || exit 1
