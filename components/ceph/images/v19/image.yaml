@@ -10,7 +10,9 @@ config:
     CEPH_REF: "{{ git_ref }}"
     CEPH_SHA1: "{{ git_sha1 }}"
     CEPH_GIT_REPO: "{{ git_repo_url }}"
-    GANESHA_REPO_BASEURL: https://buildlogs.centos.org/centos/$releasever-stream/storage/$basearch/nfsganesha-5/
+    # No GANESHA_REPO_BASEURL label: it differs per OS (el9 nfsganesha-5,
+    # el10 nfsganesha-9 — see the ganesha*.repo files) and labels cannot be
+    # conditional.
     OSD_FLAVOR: default
   annotations:
     com.clyso.ces.ceph.version: "{{ git_ref }}"
@@ -30,11 +32,20 @@ pre:
     # Per-OS repo entries are explicit — a new OS must be listed here
     # deliberately, never inherited silently. The el10 entries mirror the
     # v21 recipe and are pending an e2e build validation of 19.2.5+ on el10.
+    # el9 keeps the nfsganesha-5 stream this line has always shipped with;
+    # el10 uses nfsganesha-9 — the 10-stream nfsganesha-5 repo is effectively
+    # empty (4 packages), and upstream main uses nfsganesha-9 on el10.
     - name: ganesha
       source: file://ganesha.repo
       dest: /etc/yum.repos.d/ganesha.repo
       when:
-        os: [el9, el10]
+        os: el9
+
+    - name: ganesha
+      source: file://ganesha-el10.repo
+      dest: /etc/yum.repos.d/ganesha.repo
+      when:
+        os: el10
 
     - name: tcmu-runner
       source: https://shaman.ceph.com/api/repos/tcmu-runner/main/latest/centos/{{ os_version }}/repo?arch={{ arch }}
