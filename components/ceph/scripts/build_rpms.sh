@@ -25,7 +25,6 @@ build_ceph_rpms() {
     export CCACHE_DIR
 
     CEPH_EXTRA_CMAKE_ARGS="-DWITH_CCACHE=ON"
-    export CEPH_EXTRA_CMAKE_ARGS
   fi
 
   for i in BUILD SOURCES RPMS SRPMS SPECS; do
@@ -35,6 +34,8 @@ build_ceph_rpms() {
   echo "Include building boost with valgrind support"
   CEPH_EXTRA_CMAKE_ARGS="${CEPH_EXTRA_CMAKE_ARGS} -DWITH_SYSTEM_BOOST=OFF -DWITH_BOOST_VALGRIND=ON"
   echo "cmake extra args: ${CEPH_EXTRA_CMAKE_ARGS}"
+
+  export CEPH_EXTRA_CMAKE_ARGS
 
   echo "Build Ceph SRPMs and RPMs"
 
