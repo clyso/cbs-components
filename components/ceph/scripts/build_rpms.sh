@@ -19,10 +19,8 @@ build_ceph_rpms() {
   local topdir="${3:-${HOME}/rpmbuild}"
   local version="${4}"
 
-  ccache=
   if [[ -n ${CES_CCACHE_PATH} ]]; then
     echo "CES build rpms with CCACHE: ${CES_CCACHE_PATH}"
-    ccache="-DWITH_CCACHE=ON"
     CCACHE_DIR="${CES_CCACHE_PATH}"
     export CCACHE_DIR
 
@@ -43,7 +41,7 @@ build_ceph_rpms() {
   pushd "${ceph_dir}" >/dev/null || exit 1
   git submodule sync --recursive || exit 1
   git submodule update --init --recursive || exit 1
-  ./do_cmake.sh -DCMAKE_BUILD_TYPE=RelWithDebInfo ${ccache} || exit 1
+
   ./make-dist "${version}" || exit 1
 
   echo "move ceph tarball to ${topdir}/SOURCES/"
