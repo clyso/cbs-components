@@ -81,6 +81,9 @@ packages:
         # remove it in the future.
         # - ceph-mgr-diskprediction-local
         - ceph-mgr-k8sevents
+        # mgr modules split out of ceph-mgr in the 21.x spec.
+        - ceph-mgr-modules-core
+        - ceph-mgr-modules-standard
         - ceph-mgr-rook
         - ceph-mgr
         - ceph-mon
