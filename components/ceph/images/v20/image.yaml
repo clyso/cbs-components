@@ -177,11 +177,12 @@ packages:
         - ceph-node-proxy
 
     - section: crimson
-      # gated behind the crimson feature (was v1's `cond: with_crimson`)
+      # gated behind the crimson feature (was v1's `cond: with_crimson`);
+      # 20.x renamed the package from ceph-crimson-osd to ceph-osd-crimson.
       when:
         feature: crimson
       packages:
-        - ceph-crimson-osd
+        - ceph-osd-crimson
 
 post:
   - name: ganesha-fixes

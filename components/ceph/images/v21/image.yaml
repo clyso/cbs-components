@@ -151,12 +151,8 @@ packages:
       packages:
         - ceph-node-proxy
 
-    - section: crimson
-      # gated behind the crimson feature (was v1's `cond: with_crimson`)
-      when:
-        feature: crimson
-      packages:
-        - ceph-crimson-osd
+    # No crimson section: upstream removed the optional crimson package from
+    # the container image in 21.x.
 
 post:
   - name: ganesha-fixes
