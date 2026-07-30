@@ -61,6 +61,7 @@ build_ceph_rpms() {
     --define "_topdir ${topdir}" \
     --define "dist ${dist_version}" \
     --define "_lto_cflags -flto=3 -ffat-lto-objects" \
+    --without=dwz \
     -rb "${topdir}"/SRPMS/*.src.rpm || exit 1
 
   popd >/dev/null || exit 1
