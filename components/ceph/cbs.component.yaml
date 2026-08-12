@@ -11,10 +11,10 @@ repo: gh://ceph/ceph
 # and the 21.x dev line) el10 is required. Move the boundary by editing the
 # ranges — a version in neither range fails loudly at descriptor-create time.
 targets:
-  - versions: { before: "19.2.5" }
+  - versions: { before: "20.0.0" }
     supported: [el9]
     default: el9
-  - versions: { from: "19.2.5" }
+  - versions: { from: "20.0.0" }
     supported: [el10]
     default: el10
 
