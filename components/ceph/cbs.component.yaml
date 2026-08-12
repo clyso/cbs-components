@@ -1,15 +1,30 @@
-schema-version: 2
+schema-version: 3
 name: ceph
 # Upstream is the default source repository; override it per descriptor
 # component entry or with -o ceph=<uri> when building from a fork.
 repo: gh://ceph/ceph
 
+# Which ref shapes this component builds at all. A ref matching none of these
+# is refused at submission, before anything reaches a probe. ceph is built
+# from release tags, upstream branches, contributor wip- branches, patchset
+# refs and the ces- release branches alike, so the allowlist admits every
+# shape; narrow it here if a shape should stop being buildable.
+refs:
+  allow:
+    - ".*"
+
+# Where a build lands when no version answers for the ref — an unresolved ref
+# under `cbsbuild versions create`, which resolves from the manifest alone.
+# The service never reaches this: it refuses a build whose ref it could not
+# measure rather than guessing.
+default-target: el10
+
 # The version→OS matrix: which target OSes may build a given ceph version,
 # and which one is picked by default. Ranges are half-open [from, before).
 #
-# ceph up to 19.2.4 only builds on el9; from 19.2.5 onwards (including 20.2+
-# and the 21.x dev line) el10 is required. Move the boundary by editing the
-# ranges — a version in neither range fails loudly at descriptor-create time.
+# ceph up to 19.x only builds on el9; from 20.0.0 onwards (including the 21.x
+# dev line) el10 is required. Move the boundary by editing the ranges — a
+# version in neither range fails loudly at descriptor-create time.
 targets:
   - versions: { before: "20.0.0" }
     supported: [el9]
