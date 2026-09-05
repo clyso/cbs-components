@@ -3,8 +3,9 @@
 This is the authoring reference for the components in this repository, as
 consumed by the CBS build tooling (`cbsbuild` / the CBS service, the Rust
 `cbscore` implementation). It covers how a component is laid out, what each
-YAML file means, how conditional content works, and — importantly — how a
-component pins which OS releases may build which of its versions.
+YAML file means, how conditional content works, and — importantly — which
+refs a component will build at all and how it pins which OS releases may
+build which of its versions.
 
 ## Directory layout
 
@@ -13,7 +14,7 @@ Each component is one directory under `components/`:
 ```text
 components/
   ceph/
-    cbs.component.yaml      # the component manifest (schema v2)
+    cbs.component.yaml      # the component manifest (schema v3)
     images/
       index.yaml            # version-range → recipe-directory selection
       v19/
@@ -40,17 +41,26 @@ nothing in a component may assume a fixed absolute location.
 ## The component manifest — `cbs.component.yaml`
 
 ```yaml
-schema-version: 2
+schema-version: 3
 name: ceph
 # Upstream is the default source repository; override it per descriptor
 # component entry or with -o ceph=<uri> when building from a fork.
 repo: gh://ceph/ceph
 
+# Which ref shapes this component builds at all; a ref matching none of them
+# is refused at submission. Required beside `targets:`.
+refs:
+  allow:
+    - ".*"
+
+# The fallback target for when ref resolution does not answer.
+default-target: el10
+
 targets:
-  - versions: { before: "19.2.5" }
+  - versions: { before: "20.0.0" }
     supported: [el9]
     default: el9
-  - versions: { from: "19.2.5" }
+  - versions: { from: "20.0.0" }
     supported: [el10]
     default: el10
 
@@ -68,21 +78,130 @@ images:
 
 Field by field:
 
-- **`schema-version`** — must be `2`. Older manifests are rejected loudly
+- **`schema-version`** — must be `3`. Older manifests are rejected loudly
   with a migration hint; newer ones are rejected as not-understood.
 - **`name`** — the component name; must match how descriptors refer to it.
 - **`repo`** — the default source repository. `gh://owner/repo` is shorthand
   for GitHub over https; `ssh://` forms are accepted for private sources.
-  Forks are a per-build override, never a baked-in default.
+  Forks are a per-build override, never a baked-in default. Inline
+  credentials in the URL are scrubbed with a warning and **not used** — use
+  the git secrets store for private repos.
+- **`refs`** — the ref policy: `allow` (the shape allowlist) and the optional
+  `names` version lines. Its own section below. Required beside `targets:`,
+  forbidden without it.
+- **`default-target`** — the fallback target for when ref resolution does not
+  answer, and the *only* way a component with no matrix names a preference.
+  Required when `targets:` is absent; optional beside it, where it must
+  appear in some row's `supported` list.
 - **`targets`** — the version→OS matrix, described in its own section below.
   The key is optional: a component without it is *target-agnostic* (it builds
-  wherever it's told, and cannot provide the build's default OS).
+  wherever it's told, contributes nothing to the supported-set intersection,
+  and enforces no arch restriction).
 - **`build.get-version`** — script that prints the component's version when
-  run inside the source tree; backend-independent.
+  run inside the source tree; backend-independent. It must **fail** rather
+  than print nothing: the caller reads a zero exit as success, and an empty
+  version would flow into the rpm release field, the rpmbuild topdir path and
+  the upload location.
 - **`build.backends.<kind>`** — per-package-backend scripts (`rpm` today,
   `deb` reserved). Every OS listed anywhere in `targets.supported` must have
   a backend block matching its package kind, validated at load time.
 - **`images.path`** — the image recipes tree, usually `images/`.
+
+### Presence rules
+
+The three policy keys are optional individually but constrained jointly,
+because some combinations cannot answer "what do I build this on?". Enforced
+at load time:
+
+| `targets` | `refs.allow` | `default-target` | Verdict                |
+| --------- | ------------ | ---------------- | ---------------------- |
+| non-empty | present      | optional         | valid                  |
+| non-empty | absent       | any              | **format error**       |
+| absent    | absent       | present          | valid, target-agnostic |
+| absent    | present      | present          | **format error**       |
+| absent    | any          | absent           | **format error**       |
+
+Declaring a matrix obliges the manifest to declare which refs it can key
+against it — otherwise nothing guarantees a caller's ref can be matched to a
+`targets[].versions` row at all. Conversely a `refs` block without a matrix
+is inert (resolution exists only to select a row), and an inert block that
+looks meaningful is a trap for the next author.
+
+The two shapes in practice:
+
+- **Matrix-bearing** (ceph): `refs.allow` + `targets`, optionally
+  `default-target`.
+- **Target-agnostic** (the in-house tools): `default-target` alone. It builds
+  for whatever OS the build selects and vetoes nothing — which also means it
+  cannot express an arch restriction, since `arches:` lives on a matrix row.
+  A component that is genuinely single-arch needs a matrix for that reason
+  alone.
+
+A manifest that fails to load is logged and **skipped**, leaving the
+last-good component registry in place — so a broken manifest shows up as "no
+such component" at submission, not as a partially-loaded one.
+
+## The ref policy — `refs`
+
+```yaml
+refs:
+  allow:
+    - '^v\d+\.\d+\.\d+$'
+    - ".*squid.*"
+    - "^wip-.*"
+  names:
+    - name: squid
+      version: "19.2"
+      matches:
+        - '^v19\.2\..*$'
+        - ".*squid.*"
+```
+
+`refs.allow` is an **allowlist of ref shapes**, matched against the ref
+exactly as submitted and anchored only where the author anchors it. A ref
+matching none of the patterns is refused at submission (a 400, before
+anything is cloned or probed). A component that accepts anything writes
+`- '.*'`; one that accepts only release tags writes a single anchored version
+pattern and thereby forbids branch and SHA builds outright.
+
+**The allow-gate runs first, and `--component-version` does not bypass it.**
+"Will this component build this ref at all?" is a prior and separate question
+from "which version line is it?" — letting a caller-supplied line name
+override the gate would make the restriction unenforceable.
+
+`refs.names` maps refs to **version lines**. It is an ordered list, not a
+mapping, so first-match-wins is well defined. Each entry carries:
+
+- `name` — the identifier a caller passes to `--component-version
+  <component>=<name>`.
+- `version` — the matrix key the line resolves to. A version, not a target,
+  so one resolution feeds the matrix and anything else keyed on version.
+- `matches` — one or more regexes selecting the line implicitly.
+
+Overlapping patterns are resolved by **list order, not rejected**: the first
+entry with any matching pattern wins and later entries are not consulted. A
+specific line before a broader catch-all is a legitimate authoring choice.
+
+Validated at load: every pattern compiles and stays within a fixed
+compiled-size limit; `names[].name` is non-empty and unique; `matches` is
+non-empty; and `names[].version` parses as a version and falls inside exactly
+one declared row (a line whose version lands in a range gap could never
+resolve to a buildable row).
+
+### How a ref becomes a version
+
+One resolution order, shared by every consumer so the CLI and the server
+cannot drift apart. First hit wins:
+
+1. The **allow-gate** — no match, refused.
+2. An explicit `--component-version` **line name** — resolves to that
+   entry's `version`; an undeclared name is an error, not a fallback.
+3. The first `refs.names` entry with a **matching pattern**.
+4. A **version-shaped ref** answers for itself (`v19.2.5` → `19.2.5`). This
+   is the whole of resolution for a target-agnostic component.
+5. Otherwise **unresolved** — the ref declares no version. There is no
+   highest-range guess; `default-target` covers the target question, and the
+   version measured from the source tree by `get-version` is the backstop.
 
 ## The version→OS targets matrix
 
@@ -92,10 +211,10 @@ version range:
 
 ```yaml
 targets:
-  - versions: { before: "19.2.5" }   # ..19.2.4 — el9 only
+  - versions: { before: "20.0.0" }   # ..19.x — el9 only
     supported: [el9]
     default: el9
-  - versions: { from: "19.2.5" }     # 19.2.5.. — el10 only
+  - versions: { from: "20.0.0" }     # 20.0.0.. — el10 only
     supported: [el10]
     default: el10
 ```
@@ -106,29 +225,60 @@ never reaches a build):
 - **Ranges are half-open** `[from, before)`: `from` is inclusive, `before`
   exclusive. A row with neither bound covers all versions.
 - **Patch-granular, numeric comparison.** Bounds compare as the numeric
-  `(major, minor, patch)` tuple, so `19.2.4 < 19.2.5 < 20.0` — the boundary
-  can sit on a point release, which is exactly how the ceph el9→el10 cutover
-  is expressed above.
+  `(major, minor, patch)` tuple, so `19.2.4 < 19.2.5 < 20.0`. A boundary may
+  therefore sit on a point release (`before: "19.2.5"`), not just a major
+  line, if a cutover ever needs that granularity.
 - **Rows must be pairwise disjoint** and every bound must parse as a
   version; a typo must not silently become "all versions".
 - **`default` must be a member of `supported`.**
 - **Optional `arches:`** on a row restricts the architectures that may build
   that range (default: no restriction).
-- A version that falls in **no row fails loudly** at descriptor-create time.
-- A **non-version-shaped ref** (a branch name, say) selects the *highest*
-  declared range, with a warning — dev branches land in the row of the line
-  they fork from.
+- A version that falls in **no row** is a manifest defect, not a case for
+  `default-target`: it is reported against the range list rather than guessed
+  at. There is **no highest-range fallback** for a version the matrix cannot
+  key — a `get-version` that emitted something unparseable is a bug to fix,
+  and silently picking a row is how a wrong image ships.
 
-At build time this is enforcement, not advice: the default OS for a build
-comes from the primary component's matching row, and *every* component that
-declares a matrix vetoes unsupported combinations — an explicit
-`--target el10` for `v19.2.4` fails with "unsupported", it does not
-quietly build.
+The example above is the current real policy for ceph: the 17.x–19.x lines
+build on el9 images only; 20.0.0 and everything after (the 21.x dev line
+included) require el10 — until a future OS forces the next row.
 
-The example above is the current real policy for ceph: releases up to
-19.2.4 build on el9 images only; 19.2.5 and everything after (20.x, the
-21.x dev line, and onwards) require el10 — until a future OS forces the
-next row.
+### At build time: enforcement, not advice
+
+The default OS for a build comes from the deciding component's matching row,
+and *every* component that declares a matrix can veto an unsupported
+combination. Which failures are fatal depends on where the target came from:
+
+| Submission                                   | Outcome                     |
+| -------------------------------------------- | --------------------------- |
+| target omitted, measured version resolves    | queued on the row's default |
+| target omitted, measured version in a gap    | build failure               |
+| target omitted, component defaults disagree  | build failure               |
+| target given, measured OS unsupported        | build failure at resolution |
+| target given + `--force-target`, unsupported | queued + warning            |
+| target given, measured version in a gap      | build failure at resolution |
+| target given + `--force-target`, version gap | queued + warning            |
+| target given, **arch denied**                | build failure, force or not |
+
+An unsupported *OS* is softened to a warning when the caller asked for that
+target explicitly — the experiment is honoured. **Arch denial is never
+softened**, and neither is an unparseable measured version.
+
+When `--target` is omitted, the default is agreed across components: each
+contributes either a **row-derived** default (its resolved version's row) or
+a **fallback** (its `default-target`). Row-derived defaults outrank
+fallbacks — a matrix states what its version *requires*, a fallback only a
+preference — and within the deciding tier every default must agree, or the
+caller is asked to pick. This precedence is why a target-agnostic helper
+component's `default-target` cannot veto a matrix-bearing component's
+choice.
+
+Separately, and independently of the matrix, the **targets registry** must
+have a base image for the target (see the operator section): an unregistered
+target fails unless `--base-image` supplies one, and `--force-target` has no
+bearing on it. Trialling a genuinely new EL release therefore needs both
+flags — `--target el11 --force-target --base-image …` — each answering its
+own axis and each contributing its own warning.
 
 ### Moving the boundary / adding rows
 
@@ -155,12 +305,19 @@ recipes:
 ```
 
 Selection is an explicit range lookup — there is no proximity ranking and
-no symlink aliasing. The range rules are identical to the targets matrix
-(half-open, disjoint, parseable bounds, non-version refs pick the highest
-row with a warning). The selected version is the one *measured from the
-source tree at build time*, so a dev branch builds with the recipe of its
-base line. As sugar, an images tree containing a bare `image.yaml` and no
-`index.yaml` is a single unbounded recipe.
+no symlink aliasing. The range rules are identical to the targets matrix:
+half-open, pairwise disjoint, every bound must parse, and the row list must
+be non-empty. The selected version is the one *measured from the source tree
+at build time*, so a dev branch builds with the recipe of its base line.
+
+A version that does not parse selects **no** row and fails — as with the
+matrix, there is no highest-row fallback, because silently picking a recipe
+for a string `get-version` mangled is how a wrong image ships. A version that
+parses but matches no row fails against the declared range list.
+
+As sugar, an images tree containing a bare `image.yaml` and no `index.yaml`
+is a single unbounded recipe — the shape the in-house components use, where
+there is nothing to select on.
 
 When a new major line starts: add a recipe directory, add its row, and
 close the previously-unbounded row with a `before:`.
@@ -323,9 +480,11 @@ Two things live in the deployment, not in this repository:
 
 - **The targets registry** (`targets.yaml` in the CBS config) maps each OS
   to its base image (`el10 → quay.io/rockylinux/rockylinux:10`), with
-  optional named profiles overlaying customer-specific images. Adding a new
-  OS to a component's matrix requires the deployment's registry to know
-  that OS.
+  optional named profiles overlaying customer-specific images (selected with
+  `--profile`). Adding a new OS to a component's matrix requires the
+  deployment's registry to know that OS — a target the registry does not
+  list fails unless `--base-image` names one explicitly. This is the axis
+  the matrix cannot answer, and vice versa.
 - **`paths.components`** in the CBS config points at one or more trees like
   this repository's `components/`.
 
@@ -338,7 +497,25 @@ Two things live in the deployment, not in this repository:
    `{ versions: { from: "22.0" }, recipe: v22 }`.
 3. If the OS policy changes with it, add a matrix row in
    `cbs.component.yaml` (and close the previous row's range).
-4. Run the corpus smoke test (see below).
+4. If the line is selected by a `refs.names` entry, check that entry's
+   `version` still lands in a declared row.
+5. Run the corpus smoke test (see below).
+
+**Adding a new component:**
+
+1. Decide the shape from the presence table above: matrix-bearing needs
+   `refs.allow` + `targets`; target-agnostic needs `default-target` alone.
+   Single-arch components need a matrix, since `arches:` lives on a row.
+2. Write `build.get-version` so it **fails** rather than printing an empty
+   version, and the backend scripts against the `CBS_*` contract with
+   `${VAR:?}` guards — no positional arguments, no hardcoded artifact URLs.
+3. Point `images.path` at a tree with either an `index.yaml` or a bare
+   `image.yaml`; the recipe file is always named `image.yaml`.
+4. Check the package names the recipe installs against what the build
+   actually produces — the recipe requesting a package the spec does not
+   build fails only once the image is assembled.
+5. Never hand-author the component's own release package in `pre.packages`;
+   the backend injects it.
 
 **Moving the OS boundary (e.g. some line moves to el11):**
 
