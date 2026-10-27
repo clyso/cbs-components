@@ -31,6 +31,7 @@ components/
         install_deps.sh
         build_rpms.sh
         get_release_rpm.sh
+        sbom.sh             # optional SBOM hook
 ```
 
 The build tooling is pointed at one or more such trees via its config
@@ -71,6 +72,7 @@ build:
       deps: scripts/rpm/install_deps.sh
       build: scripts/rpm/build_rpms.sh
       release-package: scripts/rpm/get_release_rpm.sh
+      sbom: scripts/rpm/sbom.sh
 
 images:
   path: images/
@@ -105,6 +107,8 @@ Field by field:
 - **`build.backends.<kind>`** — per-package-backend scripts (`rpm` today,
   `deb` reserved). Every OS listed anywhere in `targets.supported` must have
   a backend block matching its package kind, validated at load time.
+- **`build.backends.rpm.sbom`** — optional SBOM hook, described under
+  [The SBOM hook](#the-sbom-hook--buildbackendsrpmsbom) below.
 - **`images.path`** — the image recipes tree, usually `images/`.
 
 ### Presence rules
@@ -473,6 +477,96 @@ storage/signing — which is why `${VAR:?}` matters.
 
 As with recipes: never hardcode bucket or key URLs in a script — consume
 the injected locations.
+
+Three more variables exist only when the deployment configures SBOM
+generation (the cbscore config's `sbom.ceph-sbom` names a ceph-sbom checkout,
+which the runner mounts read-only into the builder container). Without that
+configuration none of them is set. They are passed to the rpm `build` and
+`sbom` scripts:
+
+| Variable        | Meaning                                                    |
+| --------------- | ---------------------------------------------------------- |
+| `CBS_SBOM_TOOL` | the ceph-sbom checkout, e.g. `/runner/ceph-sbom`           |
+| `CBS_SBOM_OUT`  | `<CBS_TOPDIR>/SBOMS`, created empty before `sbom` runs     |
+| `CBS_PATCHES`   | JSON file listing the patches CBS applied to the worktree  |
+
+`CBS_PATCHES` is always written when SBOM generation is configured, possibly
+with an empty list. Schema 1:
+
+```json
+{
+  "schema": 1,
+  "component": "ceph",
+  "patches": [
+    {"name": "0001-foo.patch", "path": "/runner/components/ceph/patches/0001-foo.patch",
+     "sha256": "<hex of the patch file bytes>"}
+  ]
+}
+```
+
+The patches are listed in application order. CBS applies them with
+`git apply` (not committed), so the worktree is dirty by exactly these
+patches plus whatever the build writes. `name` is the path relative to the
+component's `patches/` directory; `path` is readable inside the builder
+container while the `sbom` script runs.
+
+A script must treat these variables as optional and keep its plain
+behaviour when `CBS_SBOM_TOOL` is unset or empty.
+
+### The SBOM hook — `build.backends.rpm.sbom`
+
+An optional script, run once per component **after** its rpms have been
+built and GPG-signed (so the rpm files are final) and **before** anything is
+uploaded. It runs with the worktree as cwd and the full `CBS_*` environment,
+including the SBOM variables above. Rules:
+
+- It must write its documents into `$CBS_SBOM_OUT`. CBS then GPG
+  detach-signs every `*.json` there (`<file>.asc`) and uploads the directory,
+  keeping its relative layout, to
+  `<artifacts>/<name>/rpm-<version>/<target>.clyso/sbom/`.
+- A non-zero exit fails the build.
+- It runs only when SBOM generation is configured. A component without the
+  hook gets a warning ("no SBOM for component X") and the build continues;
+  a deployment without SBOM generation logs one warning and runs no hook.
+- It runs before the worktree cleanup, so the worktree and the build tree
+  are still there; a hook that needs the build tree should free it itself
+  once done.
+
+#### ceph: SBOM build and hook
+
+With `CBS_SBOM_TOOL` set, ceph's `build_rpms.sh` changes its binary build
+(without it, the command sequence is the same as before):
+
+- after make-dist it queries the exact `epoch:version-release` of the
+  packages with `rpmspec -q --srpm` (using the build's `_topdir`, `dist` and
+  `--without=crimson`; an unset epoch gives plain `version-release`, which is
+  how ceph-sbom compares it), reads `CPE_NAME` from `/etc/os-release`, and
+  appends to `CEPH_EXTRA_CMAKE_ARGS`
+  `-DCMAKE_PROJECT_INCLUDE=$CBS_SBOM_TOOL/cephsbom/data/ceph-sbom-configure.cmake`,
+  `-DCEPH_SBOM_PACKAGE_NAME=ceph`, `-DCEPH_SBOM_PACKAGE_VERSION=<e:v-r>` and,
+  when known, `-DCEPH_SBOM_PACKAGE_OS_CPE=<cpe>` (the ccache and boost
+  arguments are kept). The hook records link inputs and map files and stamps
+  an ELF package note into every linked file; it changes nothing that is
+  built;
+- it empties `$CBS_TOPDIR/BUILD` and `$CBS_TOPDIR/BUILDROOT` first: the
+  topdir is reused across builds of the same version and the crawler refuses
+  more than one build tree;
+- instead of `rpmbuild -rb <srpm>`, which always deletes the build tree, it
+  runs `rpm -i` on the srpm it just built followed by
+  `rpmbuild -bb --noclean $CBS_TOPDIR/SPECS/ceph.spec` with the same flags,
+  so the tree survives for the crawler.
+
+`scripts/rpm/sbom.sh` then runs ceph-sbom's crawler
+(`crawl_ceph_build.py --mode cbs --regenerate-file-api --patches
+$CBS_PATCHES`, writing `$CBS_SBOM_OUT/build-facts.json`) and its assembler
+(`assemble_rpm_sboms.py` with `config/assembler-clyso.json`, writing
+`build-record.cdx.json`, `rpms/<nvra>.cdx.json` and `index.json` into
+`$CBS_SBOM_OUT`). Whatever the outcome, it empties `BUILD/` and `BUILDROOT/`
+on exit, which frees tens of GB. A failure names the crawler's exit code:
+2 usage, 4 invariant error (something in the build ceph-sbom cannot explain),
+5 tool failure; 3 (build system not approved) is only produced by older
+ceph-sbom versions. The script never passes `--allow-not-deliverable`: a
+refusal fails the build.
 
 ## The operator side (for context)
 

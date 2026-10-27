@@ -40,6 +40,7 @@ build:
       deps: scripts/rpm/install_deps.sh
       build: scripts/rpm/build_rpms.sh
       release-package: scripts/rpm/get_release_rpm.sh
+      sbom: scripts/rpm/sbom.sh
 
 images:
   path: images/
