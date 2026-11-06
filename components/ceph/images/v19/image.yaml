@@ -14,6 +14,7 @@ config:
     # el10 nfsganesha-9 — see the ganesha*.repo files) and labels cannot be
     # conditional.
     OSD_FLAVOR: default
+    source_repository: "{{ git_repo_url }}"
   annotations:
     com.clyso.ces.ceph.version: "{{ git_ref }}"
 

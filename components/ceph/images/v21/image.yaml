@@ -22,6 +22,7 @@ config:
     CEPH_GIT_REPO: "{{ git_repo_url }}"
     GANESHA_REPO_BASEURL: https://buildlogs.centos.org/centos/$releasever-stream/storage/$basearch/nfsganesha-9/
     OSD_FLAVOR: default
+    source_repository: "{{ git_repo_url }}"
   annotations:
     com.clyso.ces.ceph.version: "{{ git_ref }}"
 
