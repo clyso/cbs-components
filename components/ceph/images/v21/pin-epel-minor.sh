@@ -21,6 +21,10 @@ set -euo pipefail
 
 dnf install -y --setopt=install_weak_deps=False epel-release
 
+if [[ ! ${VERSION_ID} =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+  echo "error: cannot pin EPEL: unexpected VERSION_ID '${VERSION_ID}'" >&2
+  exit 1
+fi
 if [[ ${VERSION_ID} != *.* ]]; then
   echo "no minor release in VERSION_ID '${VERSION_ID}': EPEL left unpinned"
   exit 0
@@ -28,9 +32,15 @@ fi
 
 sed -i "s/\\\$releasever\\b/${VERSION_ID}/g" /etc/yum.repos.d/epel*.repo
 
-if ! grep -q "^metalink=.*-${VERSION_ID}&" /etc/yum.repos.d/epel.repo; then
-  echo "error: could not pin EPEL to ${VERSION_ID}:" >&2
-  grep '^metalink=' /etc/yum.repos.d/epel.repo >&2
+# Every metalink must now name the minor release, followed by neither a digit
+# nor a dot: epel-release has shipped two forms for EL 10, which pin to
+# "epel${releasever_minor:+-z}-10.2&" and "epel-10.2${stream:+s}&".
+pinned="-${VERSION_ID//./\\.}([^0-9.]|\$)"
+links="$(grep -h '^metalink=' /etc/yum.repos.d/epel*.repo || true)"
+if ! grep -q '^metalink=' /etc/yum.repos.d/epel.repo \
+  || grep -Evq -e "${pinned}" <<<"${links}"; then
+  echo "error: cannot pin EPEL to ${VERSION_ID}; the metalinks are:" >&2
+  printf '%s\n' "${links}" >&2
   exit 1
 fi
 
