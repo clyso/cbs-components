@@ -82,6 +82,12 @@ pre:
     - name: disable rpm docs install
       run: setup-no-docs.sh
 
+    # Installs epel-release itself: pre scripts run before pre.packages.
+    - name: pin EPEL to the image's minor release
+      run: pin-epel-minor.sh
+      when:
+        os: el10
+
 packages:
   required:
     - section: general
